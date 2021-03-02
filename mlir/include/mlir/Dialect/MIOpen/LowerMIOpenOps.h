@@ -94,6 +94,9 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
       }
     }
 
+    // Get parameters for backward weight optimization
+    auto GemmKBlock = 1;
+
     // Transform filter tensor.
     auto filterType = op.filter().getType().template dyn_cast<MemRefType>();
     auto filterShape = filterType.getShape();
@@ -124,6 +127,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     //           unfold.
     //
     // Weight tensor transformation for Conv2DBwdWeightOp
+    // - Part 1: Add a dimension GemmKBlock
     // - Part 1: Merge non-K dimensions to dimension 1, name it as gemmN.
     // - Part 2: PassThrough K dimension to dimension 0, name it as gemmM.
     {
@@ -287,6 +291,8 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
         }
       }
 
+      auto NSub = nDim.getInt() / GemmKBlock;
+
       llvm::SmallVector<StringAttr, 2> hwPaddedDimNames;
       for (auto strAttr : hwDimNames) {
         hwPaddedDimNames.push_back(
@@ -307,6 +313,22 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
           reorderedPaddedInputDimNames.push_back(hwPaddedDimNames[j++]);
         }
       }
+
+      llvm::SmallVector<NamedAttribute, 0> inputLayoutAttr;
+      if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType) {
+        // Part 1: UnMerge ni dimension to dimensions (GemmKBlock, NSub).
+        //inputLayoutAttr.append(
+      }
+      else {
+              // Part 1: Passthrough for ni dimension.
+        inputLayoutAttr.push_back(b.getNamedAttr("transformation",
+                                 b.getStringAttr("PassThrough")));
+        inputLayoutAttr.append({b.getNamedAttr("source_dimensions", b.getArrayAttr({nDim}))});
+        inputLayoutAttr.append({b.getNamedAttr("source_names", b.getArrayAttr({nDimName}))});
+      }
+      inputLayoutAttr.append({b.getNamedAttr("source_dimensions", b.getArrayAttr({nDim}))});
+      inputLayoutAttr.append({b.getNamedAttr("source_names", b.getArrayAttr({nDimName}))});
+
 
       paddedInputAttrs.push_back(b.getNamedAttr(
           "layout",

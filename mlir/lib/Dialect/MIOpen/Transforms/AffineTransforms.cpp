@@ -45,6 +45,7 @@ AffineMap AffineTransforms::buildIndexAffineMap(miopen::TransformOp op) {
     if (auto dimLayoutAttr = layoutAttr.getValue()[i].dyn_cast<DictionaryAttr>()) {
       auto srcDimAttr = dimLayoutAttr.get("source_dimensions").dyn_cast<ArrayAttr>();
       auto destDimAttr = dimLayoutAttr.get("dimensions").dyn_cast<ArrayAttr>();
+      auto destLengthAttr = dimLayoutAttr.get("dimension_lengthes").dyn_cast<ArrayAttr>();
       auto transformAttr = dimLayoutAttr.get("transformation").dyn_cast<StringAttr>();
 
       if (transformAttr.getValue() == "PassThrough") {
@@ -120,6 +121,29 @@ AffineMap AffineTransforms::buildIndexAffineMap(miopen::TransformOp op) {
           auto destDim = destDimAttr.getValue()[j].dyn_cast<IntegerAttr>().getInt();
           param = parameters.getValue()[j].dyn_cast<IntegerAttr>().getInt();
           auto partialExpr = getAffineDimExpr(destDim, op.getContext()) * getAffineConstantExpr(param, op.getContext());
+          expr = expr + partialExpr;
+        }
+        affExprsMap.insert({srcDim, expr});
+      } else if (transformAttr.getValue() == "UnMerge") {
+        assert(srcDimAttr.size() == 1);
+        assert(destDimAttr.size() > 1);
+
+        // Compute destination dimension strides.
+        llvm::SmallVector<int64_t, 4> destDimStrideVec;
+        int64_t stride = 1;
+        destDimStrideVec.push_back(stride);
+        for (unsigned j = destDimAttr.size() - 1; j > 0; --j) {
+          stride *= destLengthAttr.getValue()[j].dyn_cast<IntegerAttr>().getInt();
+          destDimStrideVec.push_back(stride);
+        }
+        std::reverse(destDimStrideVec.begin(), destDimStrideVec.end());
+
+        auto srcDim = srcDimAttr.getValue()[0].dyn_cast<IntegerAttr>().getInt();
+        // Build affine transformation expressions.
+        auto expr = getAffineConstantExpr(0, op.getContext());
+        for (unsigned j = 0; j < destDimAttr.size(); ++j) {
+          auto destDim = destDimAttr.getValue()[j].dyn_cast<IntegerAttr>().getInt();
+          auto partialExpr = getAffineDimExpr(destDim, op.getContext()) * getAffineConstantExpr(destDimStrideVec[j],  op.getContext());
           expr = expr + partialExpr;
         }
         affExprsMap.insert({srcDim, expr});
