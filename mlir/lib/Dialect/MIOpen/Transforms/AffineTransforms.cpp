@@ -147,6 +147,14 @@ AffineMap AffineTransforms::buildIndexAffineMap(miopen::TransformOp op) {
           expr = expr + partialExpr;
         }
         affExprsMap.insert({srcDim, expr});
+      } else if (transformAttr.getValue() == "AddDim") {
+        assert(srcDimAttr.size() == 1);
+        assert(destDimAttr.size() > 1);
+
+        auto srcDim = srcDimAttr.getValue()[0].dyn_cast<IntegerAttr>().getInt();
+        auto destDim = destDimAttr.getValue()[destDimAttr.size()-1].dyn_cast<IntegerAttr>().getInt();
+        auto expr = getAffineDimExpr(destDim, op.getContext());
+        affExprsMap.insert({srcDim, expr});
       }
     }
   }

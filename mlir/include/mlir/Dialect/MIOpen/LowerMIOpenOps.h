@@ -1,4 +1,4 @@
-//===- LowerMIOpenOps.h - MLIR to C++ for MIOpen conversion ---------------===//
+//===- wowerMIOpenOps.h - MLIR to C++ for MIOpen conversion ---------------===//
 //
 // Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -95,7 +95,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     }
 
     // Get parameters for backward weight optimization
-    auto GemmKBlock = 1;
+    auto gemmKBlock = 1;
 
     // Transform filter tensor.
     auto filterType = op.filter().getType().template dyn_cast<MemRefType>();
@@ -104,7 +104,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     // Y/X dimension for filter tensor.
     int64_t filterYDim, filterXDim;
 
-    llvm::SmallVector<int64_t, 2> transformedFilterShape;
+    llvm::SmallVector<int64_t, 3> transformedFilterShape;
 
     llvm::SmallVector<NamedAttribute, 3> transformedFilterAttrs;
 
@@ -127,9 +127,10 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     //           unfold.
     //
     // Weight tensor transformation for Conv2DBwdWeightOp
-    // - Part 1: Add a dimension GemmKBlock
-    // - Part 1: Merge non-K dimensions to dimension 1, name it as gemmN.
-    // - Part 2: PassThrough K dimension to dimension 0, name it as gemmM.
+    // - Part 1: Add a dimension 0 to K dimension, name it as  gemmKBlock and K 
+    // - Part 2: Merge non-K dimensions to dimension 2, name it as gemmN.
+    // - Part 3: Merge gemmKBlock and K dimensions to dimension 0, name it as gemmM.
+    // - Part 4: PassThrough non-K dimensions to dimension 1, name it as gemmN.
     {
       llvm::SmallVector<IntegerAttr, 3> nonKDims;
       IntegerAttr kDim;
@@ -162,8 +163,13 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
           nonKDimSize *= filterShape[i];
         }
       }
+
       transformedFilterShape.push_back(nonKDimSize);
-      transformedFilterShape.push_back(filterShape[kDim.getInt()]);
+      transformedFilterShape.push_back(filterShape[kDim.getInt()] * gemmKBlock);
+
+//      if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType){
+//        transformedFilterShape.push_back(gemmKBlock);
+//      }
 
       llvm::SmallVector<NamedAttribute, 2> sourceProbCYXDimAttr{
 	      b.getNamedAttr("source_dimensions",
@@ -185,20 +191,56 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
 		      b.getNamedAttr("source_dimensions", b.getArrayAttr({kDim})),
 		      b.getNamedAttr("source_names", b.getArrayAttr({kDimName}))};
 
-      llvm::SmallVector<NamedAttribute, 3> targetGemm0DimAttr{
+      llvm::SmallVector<NamedAttribute, 2> targetGemm0DimAttr{
 	      b.getNamedAttr("dimensions",
 			      b.getArrayAttr({b.getI32IntegerAttr(0)})),
 		      b.getNamedAttr("names", b.getArrayAttr({b.getStringAttr(
 						      arg0TargetLayoutName0)}))};
 
-      llvm::SmallVector<NamedAttribute, 3> targetGemm1DimAttr{
+      llvm::SmallVector<NamedAttribute, 2> targetGemm1DimAttr{
 	      b.getNamedAttr("dimensions",
 			      b.getArrayAttr({b.getI32IntegerAttr(1)})),
 		      b.getNamedAttr("names", b.getArrayAttr({b.getStringAttr(
 						      arg0TargetLayoutName1)}))};
 
+      // construct transform ops for bwd_weight
+       llvm::SmallVector<NamedAttribute, 3> sourceProbKDimAttrWrw{
+        b.getNamedAttr("transformation", b.getStringAttr("AddDim")),
+          b.getNamedAttr("source_dimensions", b.getArrayAttr({kDim})),
+          b.getNamedAttr("source_names", b.getArrayAttr({kDimName}))};
+
+      llvm::SmallVector<IntegerAttr, 2> KBlockKDims;
+      KBlockKDims.push_back(b.getI32IntegerAttr(0));
+      KBlockKDims.push_back(b.getI32IntegerAttr(1));
+
+      llvm::SmallVector<StringAttr, 2> KBlockKDimNames;
+      KBlockKDimNames.push_back(b.getStringAttr("gemmKBlock"));
+      KBlockKDimNames.push_back(b.getStringAttr(arg0TargetLayoutName0));
+      
+      llvm::SmallVector<NamedAttribute, 2> targetGemm01DimAttr{
+	      b.getNamedAttr("dimensions",
+			      b.getArrayAttr({b.getI32IntegerAttr(0), b.getI32IntegerAttr(1)})),
+		      b.getNamedAttr("names", b.getArrayAttr({b.getStringAttr("gemmKBlock"), kDimName}))};
+
+      llvm::SmallVector<NamedAttribute, 2> targetGemm2DimAttr{
+	      b.getNamedAttr("dimensions",
+			      b.getArrayAttr({b.getI32IntegerAttr(2)})),
+		      b.getNamedAttr("names", b.getArrayAttr({b.getStringAttr( "CYX")}))};
+
+      llvm::SmallVector<NamedAttribute, 3> sourceKBlockKDimAttr{
+        b.getNamedAttr("transformation", b.getStringAttr("Merge")),
+        b.getNamedAttr("source_dimensions", b.getArrayAttr({b.getI32IntegerAttr(0),  b.getI32IntegerAttr(1)})), 
+        b.getNamedAttr("source_names",  b.getArrayAttr({b.getStringAttr("gemmKBlock"), kDimName}))};
+
+      llvm::SmallVector<NamedAttribute, 3> sourceGemmNDimAttr{
+	      b.getNamedAttr("transformation", b.getStringAttr("PassThrough")),
+		      b.getNamedAttr("source_dimensions", b.getArrayAttr({b.getI32IntegerAttr(2)})),
+		      b.getNamedAttr("source_names", b.getArrayAttr({b.getStringAttr("CYX")}))};
+
       llvm::SmallVector<NamedAttribute, 0> layoutAttr0;
       llvm::SmallVector<NamedAttribute, 0> layoutAttr1;
+      llvm::SmallVector<NamedAttribute, 0> layoutAttr2;
+      llvm::SmallVector<NamedAttribute, 0> layoutAttr3;
 
       if (convOpType == miopen::ConvOpType::Conv2DOpType) {
         layoutAttr0.append(targetGemm0DimAttr.begin(),
@@ -209,7 +251,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
                            targetGemm1DimAttr.end());
         layoutAttr1.append(sourceProbKDimAttr.begin(),
                            sourceProbKDimAttr.end());
-      } else {
+      } else if (convOpType == miopen::ConvOpType::Conv2DBwdDataOpType){
         layoutAttr0.append(targetGemm0DimAttr.begin(),
                            targetGemm0DimAttr.end());
         layoutAttr0.append(sourceProbKDimAttr.begin(),
@@ -218,8 +260,42 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
                            targetGemm1DimAttr.end());
         layoutAttr1.append(sourceProbCYXDimAttr.begin(),
                            sourceProbCYXDimAttr.end());
+      } else if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType){
+        layoutAttr0.append(targetGemm01DimAttr.begin(),
+                           targetGemm01DimAttr.end());
+        layoutAttr0.append(sourceProbKDimAttrWrw.begin(),
+                           sourceProbKDimAttrWrw.end());
+        layoutAttr1.append(targetGemm2DimAttr.begin(),
+                           targetGemm2DimAttr.end());
+        layoutAttr1.append(sourceProbCYXDimAttr.begin(),
+                           sourceProbCYXDimAttr.end());
+        layoutAttr2.append(targetGemm0DimAttr.begin(),
+                           targetGemm0DimAttr.end());
+        layoutAttr2.append(sourceKBlockKDimAttr.begin(),
+                           sourceKBlockKDimAttr.end());
+        layoutAttr3.append(targetGemm1DimAttr.begin(),
+                           targetGemm1DimAttr.end());
+        layoutAttr3.append(sourceGemmNDimAttr.begin(),
+                           sourceGemmNDimAttr.end());
       }
 
+    if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType){
+      transformedFilterAttrs.push_back(b.getNamedAttr(
+          "layout", b.getArrayAttr({
+                        b.getDictionaryAttr({ArrayRef<NamedAttribute>(
+                            layoutAttr0.begin(), layoutAttr0.end())}),
+
+                        b.getDictionaryAttr({ArrayRef<NamedAttribute>(
+                            layoutAttr1.begin(), layoutAttr1.end())}),
+
+                       b.getDictionaryAttr({ArrayRef<NamedAttribute>(
+                            layoutAttr2.begin(), layoutAttr2.end())}),
+
+                       b.getDictionaryAttr({ArrayRef<NamedAttribute>(
+                            layoutAttr3.begin(), layoutAttr3.end())}),
+                    })));
+    }
+    else {
       transformedFilterAttrs.push_back(b.getNamedAttr(
           "layout", b.getArrayAttr({
                         b.getDictionaryAttr({ArrayRef<NamedAttribute>(
@@ -230,15 +306,24 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
                             layoutAttr1.begin(), layoutAttr1.end())}),
                     })));
     }
+    }
 
     // set source_layout attribute.
     transformedFilterAttrs.push_back(
         b.getNamedAttr("source_layout", filterLayoutAttr));
     // set output_layout attribute.
-    transformedFilterAttrs.push_back(b.getNamedAttr(
+//    if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType){
+//      transformedFilterAttrs.push_back(b.getNamedAttr(
+//        "output_layout",
+//        b.getArrayAttr({b.getStringAttr(arg0TargetLayoutName0),
+//                        b.getStringAttr(arg0TargetLayoutName1)})));
+//    }
+//    else {
+      transformedFilterAttrs.push_back(b.getNamedAttr(
         "output_layout",
         b.getArrayAttr({b.getStringAttr(arg0TargetLayoutName0),
                         b.getStringAttr(arg0TargetLayoutName1)})));
+//    }
     // set gridwise_gemm_argument_pos attribute.
     transformedFilterAttrs.push_back(b.getNamedAttr(
         "gridwise_gemm_argument_position",
@@ -250,11 +335,68 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
         loc, transformedFilterMemRefType, op.filter(), transformedFilterAttrs);
 
     // Transform input tensor.
-    // Input tensor step 1: padded input.
+    
     auto inputType = op.input().getType().template dyn_cast<MemRefType>();
     auto inputShape = inputType.getShape();
     auto inputElementType = inputType.getElementType();
 
+    llvm::SmallVector<int64_t, 5> unmergedInputShape;
+    llvm::SmallVector<NamedAttribute, 4> unmergedInputAttrs;
+
+    // unmergedInputDimNames would be used by the next stage.
+    llvm::SmallVector<StringAttr, 4> unmergeInputDimNames;
+
+    // Input tensor step 0: unmerge input.
+    llvm::SmallVector<int64_t, 4> unmergedInputShape;
+
+    llvm::SmallVector<NamedAttribute, 3> unmergedInputAttrs;
+
+    // reorderedPaddedInputDimNames would be used by the next stage.
+    llvm::SmallVector<StringAttr, 4> unmergedInputDimNames;
+
+    int64_t NSub;
+    {
+      IntegerAttr nDim, cDim;
+      StringAttr nDimName, cDimName;
+      unsigned dimCtr = 0;
+      for (unsigned i = 0; i < inputLayoutAttr.size(); ++i) {
+        if (auto strAttr =
+                inputLayoutAttr.getValue()[i].template dyn_cast<StringAttr>()) {
+          if (strAttr.getValue() == "ni") {
+            nDim = b.getI32IntegerAttr(i);
+            nDimName = strAttr;
+            gemmKBlockDim = b.getI32IntegerAtrt(dimCtr++);
+          } else if (strAttr.getValue() == "ci") {
+            cDim = b.getI32IntegerAttr(i);
+            cDimName = strAttr;
+          } else {
+            hwDims.push_back(b.getI32IntegerAttr(i));
+            hwDimNames.push_back(strAttr);
+          }
+        }
+      }
+ 
+      NSub = inputShape[nDim.getInt()] / gemmKBlock;
+    }
+
+    unmergedInputAttrs.push_back(
+       b.getNamedAttr("source_layout", inputLayoutAttr));
+    unmergedInputAttrs.push_back(
+       b.getNamedAttr(
+        "output_layout", b.getArrayAttr(ArrayRef<Attribute>(
+                             unmergedInputDimNames.begin(),
+                             unmergedPaddedInputDimNames.end()))));
+ 
+    auto unmergedInputMemRefType = MemRefType::get(unmergedInputShape, inputElementType);
+    auto unmergedInput = b.create<miopen::TransformOp>(
+      loc, unmergedInputMemRefType, op.input(), unmergedInputAttrs);
+
+
+
+    // reorderedUnmergedInputDimNames would be used by the next stage.
+    llvm::SmallVector<StringAttr, 4> reorderedUnmergeInputDimNames;
+
+    // Input tensor step 1: padded input.
     llvm::SmallVector<int64_t, 4> paddedInputShape;
 
     llvm::SmallVector<NamedAttribute, 3> paddedInputAttrs;
@@ -291,7 +433,6 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
         }
       }
 
-      auto NSub = nDim.getInt() / GemmKBlock;
 
       llvm::SmallVector<StringAttr, 2> hwPaddedDimNames;
       for (auto strAttr : hwDimNames) {
@@ -313,21 +454,6 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
           reorderedPaddedInputDimNames.push_back(hwPaddedDimNames[j++]);
         }
       }
-
-      llvm::SmallVector<NamedAttribute, 0> inputLayoutAttr;
-      if (convOpType == miopen::ConvOpType::Conv2DBwdWeightOpType) {
-        // Part 1: UnMerge ni dimension to dimensions (GemmKBlock, NSub).
-        //inputLayoutAttr.append(
-      }
-      else {
-              // Part 1: Passthrough for ni dimension.
-        inputLayoutAttr.push_back(b.getNamedAttr("transformation",
-                                 b.getStringAttr("PassThrough")));
-        inputLayoutAttr.append({b.getNamedAttr("source_dimensions", b.getArrayAttr({nDim}))});
-        inputLayoutAttr.append({b.getNamedAttr("source_names", b.getArrayAttr({nDimName}))});
-      }
-      inputLayoutAttr.append({b.getNamedAttr("source_dimensions", b.getArrayAttr({nDim}))});
-      inputLayoutAttr.append({b.getNamedAttr("source_names", b.getArrayAttr({nDimName}))});
 
 
       paddedInputAttrs.push_back(b.getNamedAttr(
@@ -378,7 +504,11 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     }
     // set source_layout attribute.
     paddedInputAttrs.push_back(
-        b.getNamedAttr("source_layout", inputLayoutAttr));
+        b.getNamedAttr("intermediate_layout", 
+                                 b.getArrayAttr(ArrayRef<Attribute>(
+                                   unmergedInputDimNames.begin(),
+                                   unmergedPaddedInputDimNames.end()))));
+   //     b.getNamedAttr("source_layout", inputLayoutAttr));
     // set output_layout attribute.
     paddedInputAttrs.push_back(b.getNamedAttr(
         "output_layout", b.getArrayAttr(ArrayRef<Attribute>(
@@ -546,7 +676,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
         loc, embeddedInputMemRefType, ArrayRef<Value>(paddedInput),
         embeddedInputAttrs);
 
-    // Input tensor step 3: transformed input.
+    // Input tensor step 4: transformed input.
     llvm::SmallVector<int64_t, 2> transformedInputShape;
 
     llvm::SmallVector<NamedAttribute, 3> transformedInputAttrs;
@@ -555,7 +685,7 @@ struct Conv2DRewritePattern : public OpRewritePattern<T> {
     arg1TargetLayoutName0.append(fields.gemmTargetCharName[1].substr(0, 1));
     SmallString<4> arg1TargetLayoutName1("gemm");
     arg1TargetLayoutName1.append(fields.gemmTargetCharName[1].substr(1, 1));
-
+    
     // set layout attribute.
     // Transformed input tensor transformation:
     // - Part 1: Merge ci, y, x dimensions to dimension 0, name it as gemmK.
