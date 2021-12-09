@@ -31,6 +31,7 @@ void getAndBuildMIOpen(String prefixOpt, String cmakeOpts) {
 
 void showEnv() {
     echo "$env.NODE_NAME"
+    echo "$HOME"
     sh 'cat /etc/os-release'
     sh 'ulimit -a'
     sh '/opt/rocm/bin/rocm-smi'
@@ -39,7 +40,7 @@ void showEnv() {
 }
 
 String dockerArgs() {
-    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro"
+    return '--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME="${WORKSPACE}"'
 }
 
 String dockerImage() {
@@ -236,7 +237,7 @@ pipeline {
                     }
                     environment {
                         PATH="/opt/rocm/llvm/bin:$PATH"
-                        HOME="${WORKSPACE}"
+                        //HOME="${WORKSPACE}"
                     }
                     stages {
                         stage('Environment') {
