@@ -39,8 +39,8 @@ void showEnv() {
     sh 'id'
 }
 
-String dockerArgs() {
-    return '--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME="/home/jenkins/workspace/testHome"'
+String dockerArgs(String homeDir) {
+    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=${homeDir}"
 }
 
 String dockerImage() {
@@ -132,7 +132,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs()
+                            args dockerArgs("${WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
@@ -186,7 +186,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs()
+                            args dockerArgs("${WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
@@ -230,7 +230,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs()
+                            args dockerArgs("${WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'gfx906' }"
                             alwaysPull true
                         }
@@ -355,7 +355,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs()
+                            args dockerArgs("${WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
@@ -433,7 +433,7 @@ pipeline {
                         agent {
                             docker {
                                 image dockerImage()
-                                args dockerArgs()
+                                args dockerArgs("${WORKSPACE}")
                                 label "${params.canXdlops ? 'gfx908' : 'gfx906'}"
                                 alwaysPull true
                             }
@@ -495,7 +495,7 @@ pipeline {
             agent {
                 docker {
                     image dockerImage()
-                    args dockerArgs()
+                    args dockerArgs("${WORKSPACE}")
                     label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                     alwaysPull true
                 }
