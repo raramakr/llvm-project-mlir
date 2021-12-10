@@ -40,7 +40,7 @@ void showEnv() {
 }
 
 String dockerArgs(String homeDir) {
-    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=${homeDir}"
+    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=${env.WORKSPAC}"
 }
 
 String dockerImage() {
