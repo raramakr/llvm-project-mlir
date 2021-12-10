@@ -40,7 +40,7 @@ void showEnv() {
 }
 
 String dockerArgs(String homeDir) {
-    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=${env.WORKSPACE}"
+    return "--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro -e HOME=${homeDir}"
 }
 
 String dockerImage() {
@@ -132,14 +132,14 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args '--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro'
+                            args dockerArgs("${env.WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
                     }
-                    environment {
-                        HOME="${WORKSPACE}"
-                    }
+                   // environment {
+                   //     HOME="${WORKSPACE}"
+                   // }
                     stages {
                         stage('Environment') {
                             steps {
@@ -186,7 +186,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs("${WORKSPACE}")
+                            args dockerArgs("${env.WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
@@ -230,7 +230,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs("/home/jenkins/workspace/testHome")
+                            args dockerArgs("${env.WORKSPACE}")
                             label "${params.canXdlops ? 'gfx908' : 'gfx906' }"
                             alwaysPull true
                         }
