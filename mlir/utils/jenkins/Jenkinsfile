@@ -230,7 +230,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs("${WORKSPACE}")
+                            args dockerArgs("/temp")
                             label "${params.canXdlops ? 'gfx908' : 'gfx906' }"
                             alwaysPull true
                         }
