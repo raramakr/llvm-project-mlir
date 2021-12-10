@@ -132,7 +132,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs("${WORKSPACE}")
+                            args '--device=/dev/kfd --device=/dev/dri --group-add video -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro'
                             label "${params.canXdlops ? 'gfx908' : 'rocm' }"
                             alwaysPull true
                         }
@@ -230,7 +230,7 @@ pipeline {
                     agent {
                         docker {
                             image dockerImage()
-                            args dockerArgs("/temp")
+                            args dockerArgs("/home/jenkins/workspace/testHome")
                             label "${params.canXdlops ? 'gfx908' : 'gfx906' }"
                             alwaysPull true
                         }
