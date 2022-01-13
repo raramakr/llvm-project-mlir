@@ -23,7 +23,7 @@ add_definitions(-D__ROCM_PATH__="${ROCM_PATH}")
 add_definitions(-D__USE_ROCM_4_4_OR_OLDER__=${USE_ROCM_4_4_OR_OLDER})
 
 set(HIP_PATH "${ROCM_PATH}/hip" CACHE PATH " Path to which HIP has been installed")
-set(CMAKE_MODULE_PATH "${ROCM_PATH}/lib/cmake/hip" ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH "${ROCM_PATH}/lib/cmake/hip" "${HIP_PATH}/cmake" ${CMAKE_MODULE_PATH})
 find_package(HIP)
 if (NOT HIP_FOUND)
   message(SEND_ERROR "Build the mlir rocm runner requires a working ROCm and HIP install")
@@ -33,7 +33,7 @@ endif()
 
 # Locate HIP runtime library.
 find_library(ROCM_RUNTIME_LIBRARY amdhip64
-	PATHS "${ROCM_PATH}/lib")
+	PATHS "${ROCM_PATH}/lib" "${HIP_PATH}/lib")
 if (NOT ROCM_RUNTIME_LIBRARY)
   message(SEND_ERROR "Could not locate ROCm HIP runtime library")
 else()
